@@ -9,13 +9,26 @@ const App = () => {
     // State to store the dimensions of the aquarium
     const [aquariumDimensions, setAquariumDimensions] = useState({ width: 0, height: 0 });
 
+    // State for the passing shark
+    const [shark, setShark] = useState({
+        x: -500, // Start off-screen to the left
+        y: 0,
+        visible: false,
+        flipped: false,
+        speed: 10, // Shark speed
+        size: 1500, // Shark size
+    });
+
     // Constants for fish behavior
     const FISH_BASE_SPEED = 2; // Pixels per frame for normal movement
     const FISH_DEFAULT_SIZE = 200; // Default size for fish image (width and height)
 
     // Constants for click interactions
-    const JUMP_SCARE_DURATION_MS = 2000; // Duration of the jump scare animation (grow and shrink) - Changed to 2 seconds
+    const JUMP_SCARE_DURATION_MS = 2000; // Duration of the jump scare animation (grow and shrink)
     const MAX_SCARE_SIZE_RATIO = 0.9; // Max size relative to aquarium's smaller dimension (width or height) during scare
+
+    // Shark specific constants
+    const SHARK_PASS_INTERVAL_MS = 5000; // Shark passes every 10 seconds
 
     // --- IMPORTANT: Replace these with your actual fish image URLs ---
     // If you're running this locally, place your fish images in the 'public' folder
@@ -119,72 +132,63 @@ const App = () => {
             return prevFishes.map(fish => {
                 let newX = fish.x;
                 let newY = fish.y;
-                let newDx = fish.dx; // Use the fish's current dx/dy
-                let newDy = fish.dy; // Use the fish's current dx/dy
+                let newDx = fish.dx;
+                let newDy = fish.dy;
                 let newFlipped = fish.flipped;
                 let newCurrentSize = fish.currentSize;
                 let newIsScaring = fish.isScaring;
                 let newScareProgress = fish.scareProgress;
 
                 if (newIsScaring) {
-                    // Update scare progress based on time (assuming ~60fps for calculation, but actual time used)
                     newScareProgress = Math.min(1, fish.scareProgress + (1000 / JUMP_SCARE_DURATION_MS) * (1 / 60));
 
                     const scareSize = Math.min(aquariumDimensions.width, aquariumDimensions.height) * MAX_SCARE_SIZE_RATIO;
                     const normalSize = fish.originalSize;
 
-                    // Size interpolation: Grow quickly in first 20%, then shrink over remaining 80%
                     if (newScareProgress < 0.2) {
                         newCurrentSize = normalSize + (scareSize - normalSize) * (newScareProgress / 0.2);
                     } else {
                         newCurrentSize = scareSize - (scareSize - normalSize) * ((newScareProgress - 0.2) / 0.8);
                     }
 
-                    // Position interpolation: Move to center quickly, then back to original position
                     const targetX = (aquariumDimensions.width / 2) - (newCurrentSize / 2);
                     const targetY = (aquariumDimensions.height / 2) - (newCurrentSize / 2);
 
-                    // A 'there and back' movement interpolation
-                    const moveProgressSegment = newScareProgress * 2; // 0 to 2 over total animation
+                    const moveProgressSegment = newScareProgress * 2;
                     let actualMoveProgress;
                     if (moveProgressSegment <= 1) {
-                        actualMoveProgress = moveProgressSegment; // Moves from 0 to 1 (original to target)
+                        actualMoveProgress = moveProgressSegment;
                     } else {
-                        actualMoveProgress = 1 - (moveProgressSegment - 1); // Moves from 1 to 0 (target back to original)
+                        actualMoveProgress = 1 - (moveProgressSegment - 1);
                     }
 
                     newX = fish.originalX + (targetX - fish.originalX) * actualMoveProgress;
                     newY = fish.originalY + (targetY - fish.originalY) * actualMoveProgress;
 
 
-                    if (newScareProgress >= 1) { // Scare animation finished
+                    if (newScareProgress >= 1) {
                         newIsScaring = false;
-                        newCurrentSize = normalSize; // Reset size
-                        // Reset to the position where it started the scare
+                        newCurrentSize = normalSize;
                         newX = fish.originalX;
                         newY = fish.originalY;
 
-                        // Restore random movement after scare
                         newDx = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
                         newDy = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
                     }
 
                 } else {
-                    // Normal movement
                     newX = fish.x + newDx;
                     newY = fish.y + newDy;
 
-                    // Boundary checks for X-axis
                     if (newX + fish.currentSize > aquariumDimensions.width || newX < 0) {
-                        newDx *= -1; // Reverse horizontal direction
-                        newX = fish.x; // Revert to previous position if going out of bounds
-                        newFlipped = newDx < 0; // Flip image based on new direction
+                        newDx *= -1;
+                        newX = fish.x;
+                        newFlipped = newDx < 0;
                     }
 
-                    // Boundary checks for Y-axis
                     if (newY + fish.currentSize > aquariumDimensions.height || newY < 0) {
-                        newDy *= -1; // Reverse vertical direction
-                        newY = fish.y; // Revert to previous position
+                        newDy *= -1;
+                        newY = fish.y;
                     }
                 }
 
@@ -201,30 +205,82 @@ const App = () => {
                 };
             });
         });
-    }, [aquariumDimensions]); // Dependencies for useCallback
+    }, [aquariumDimensions]);
 
-    // Effect for the main animation loop (fish movement)
+    // Shark animation loop logic, wrapped in useCallback
+    const animateShark = useCallback(() => {
+        setShark(prevShark => {
+            if (!prevShark.visible) return prevShark; // If not visible, no need to animate
+
+            let newX = prevShark.x + (prevShark.flipped ? -prevShark.speed : prevShark.speed);
+
+            // Check if shark has passed completely off-screen
+            if (prevShark.flipped && newX < -prevShark.size) { // Moving left, off left side
+                return { ...prevShark, visible: false, x: -prevShark.size };
+            }
+            if (!prevShark.flipped && newX > aquariumDimensions.width) { // Moving right, off right side
+                return { ...prevShark, visible: false, x: aquariumDimensions.width };
+            }
+
+            return { ...prevShark, x: newX };
+        });
+    }, [aquariumDimensions]);
+
+
+    // Effect for the main animation loop (fish and shark movement)
     useEffect(() => {
-        // Only start animation if aquarium dimensions are known
         if (aquariumDimensions.width === 0 || aquariumDimensions.height === 0) {
             return;
         }
 
         let animationFrameId;
 
-        const animate = (timestamp) => { // Receive timestamp from requestAnimationFrame
-            animateFishes(timestamp); // Pass timestamp to animateFishes
-            animationFrameId = requestAnimationFrame(animate); // Continue animation
+        const animate = (timestamp) => {
+            animateFishes(timestamp);
+            animateShark(); // Animate shark on each frame
+            animationFrameId = requestAnimationFrame(animate);
         };
 
-        animationFrameId = requestAnimationFrame(animate); // Start animation loop
+        animationFrameId = requestAnimationFrame(animate);
 
-        // Cleanup animation frame on component unmount or dependencies change
         return () => cancelAnimationFrame(animationFrameId);
-    }, [aquariumDimensions, animateFishes]); // Depend on animateFishes now
+    }, [aquariumDimensions, animateFishes, animateShark]); // Depend on both animation functions
+
+    // Effect to trigger shark appearance periodically
+    useEffect(() => {
+        if (aquariumDimensions.width === 0 || aquariumDimensions.height === 0) {
+            return;
+        }
+
+        const sharkTimer = setInterval(() => {
+            setShark(prevShark => {
+                if (prevShark.visible) return prevShark; // Don't spawn if already visible
+
+                const startFromRight = Math.random() > 0.5; // Randomly start from left or right
+                const startX = startFromRight ? aquariumDimensions.width : -shark.size;
+                const startY = Math.random() * (aquariumDimensions.height - shark.size);
+
+                return {
+                    ...prevShark,
+                    x: startX,
+                    y: startY,
+                    visible: true,
+                    flipped: startFromRight, // Flip if starting from right (moving left)
+                };
+            });
+        }, SHARK_PASS_INTERVAL_MS);
+
+        return () => clearInterval(sharkTimer);
+    }, [aquariumDimensions, shark.size]); // Depend on shark.size to reset if its value changes
 
     return (
         <div className="relative flex flex-col h-screen w-screen font-inter overflow-hidden">
+            {/* Title Section */}
+            <div className="flex flex-col items-center justify-center p-4 bg-gray-900 text-white rounded-b-2xl shadow-lg z-20">
+                <h1 className="text-5xl font-bold text-teal-400 drop-shadow-lg">AslabArium</h1>
+                <p className="text-xl font-bold text-gray-300 mt-1">25/26</p>
+            </div>
+
             {/* Aquarium Container */}
             <div
                 ref={aquariumRef}
@@ -258,24 +314,39 @@ const App = () => {
                     ))}
                 </div>
 
+                {/* Render the passing shark */}
+                {shark.visible && (
+                    <img
+                        src="/sharkto.png"
+                        alt="shark"
+                        className={`absolute transition-transform duration-100 ease-linear ${shark.flipped ? '-scale-x-100' : ''}`}
+                        style={{
+                            left: `${shark.x}px`,
+                            top: `${shark.y}px`,
+                            width: `${shark.size}px`,
+                            height: 'auto', // Maintain aspect ratio
+                            zIndex: 5, // Changed to 5 to be behind regular fish (zIndex 10)
+                            objectFit: 'contain',
+                        }}
+                        onError={(e) => { e.target.style.display = 'none'; }} // Hide if sharkto.png not found
+                    />
+                )}
+
                 {/* Render each fish */}
                 {fishes.map(fish => (
                     <img
                         key={fish.id}
                         src={fish.src}
                         alt="fish"
-                        // Removed 'transition-transform duration-100 ease-linear' from className
-                        // to allow custom animation via style and scareProgress
                         className={`absolute ${fish.flipped ? '-scale-x-100' : ''}`}
                         style={{
                             left: `${fish.x}px`,
                             top: `${fish.y}px`,
-                            width: `${fish.currentSize}px`,  // Use dynamic currentSize
-                            height: `${fish.currentSize}px`, // Use dynamic currentSize
+                            width: `${fish.currentSize}px`,
+                            height: `${fish.currentSize}px`,
                             zIndex: fish.isScaring ? 20 : 10, // Bring to front during scare
                             objectFit: 'contain', // Ensures the entire image is visible within its bounds
                             cursor: 'pointer', // Indicates it's clickable
-                            // Add transition for smooth scare animation if not controlled by scareProgress itself
                             transition: fish.isScaring ? 'all 0.1s linear' : 'none', // Fast transition during scare, none otherwise
                         }}
                         onClick={() => handleFishClick(fish.id)} // Add click handler
@@ -296,11 +367,8 @@ const App = () => {
 
                 body {
                     font-family: 'Inter', sans-serif;
-                    /* Prevent text selection */
                     user-select: none;
-                    /* Prevent image dragging for WebKit browsers (e.g., Chrome, Safari) */
                     -webkit-user-drag: none;
-                    /* Prevent image dragging for Mozilla Firefox */
                     -moz-user-select: none;
                     -ms-user-select: none;
                 }
@@ -316,17 +384,17 @@ const App = () => {
 
                 @keyframes bubble-rise {
                     0% {
-                        transform: translateY(0) scale(0.3); /* Start very small */
-                        opacity: 0; /* Start invisible */
+                        transform: translateY(0) scale(0.3);
+                        opacity: 0;
                     }
                     10% {
-                        opacity: 0.2; /* Fade in slowly */
+                        opacity: 0.2;
                     }
                     90% {
-                        opacity: 0.1; /* Maintain low visibility */
+                        opacity: 0.1;
                     }
                     100% {
-                        transform: translateY(-100vh) scale(0.6); /* End larger but still small */
+                        transform: translateY(-100vh) scale(0.6);
                         opacity: 0;
                     }
                 }
