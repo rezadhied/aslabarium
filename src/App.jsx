@@ -19,6 +19,18 @@ const App = () => {
         size: 1500, // Shark size
     });
 
+    // State for jellyfish
+    const [jellyfishes, setJellyfishes] = useState([]);
+
+    // State for the anchor
+    const [anchor, setAnchor] = useState({
+        y: -200, // Start off-screen above the top (initial value, will be set more precisely)
+        x: 0, // Will be set to a random position when it shows
+        visible: false,
+        state: 'hidden', // 'hidden', 'showing'
+        timerStart: 0,
+    });
+
     // Constants for fish behavior
     const FISH_BASE_SPEED = 2; // Pixels per frame for normal movement
     const FISH_DEFAULT_SIZE = 200; // Default size for fish image (width and height)
@@ -28,7 +40,22 @@ const App = () => {
     const MAX_SCARE_SIZE_RATIO = 0.9; // Max size relative to aquarium's smaller dimension (width or height) during scare
 
     // Shark specific constants
-    const SHARK_PASS_INTERVAL_MS = 5000; // Shark passes every 10 seconds
+    const SHARK_PASS_INTERVAL_MS = 5000; // Shark passes every 5 seconds
+
+    // Jellyfish specific constants
+    const NUM_JELLYFISH = 9;
+    const JELLYFISH_SIZE = 100; // Size of jellyfish image
+    const JELLYFISH_RISE_SPEED = 0.8; // Pixels per frame for rising
+    const JELLYFISH_FALL_SPEED = 0.5; // Pixels per frame for falling
+    const JELLYFISH_FLOAT_DURATION_MS = 3000; // 3 seconds in middle
+    const JELLYFISH_HIDDEN_DURATION_MS = 5000; // 3 seconds invisible before next cycle
+
+    // Anchor specific constants
+    const ANCHOR_DISPLAY_DURATION_MS = 10000; // Anchor visible for 5 seconds
+    const ANCHOR_HIDDEN_DURATION_MS = 10000; // Anchor hidden for 5 seconds
+    const ANCHOR_DROP_SPEED = 2; // How fast the anchor moves vertically
+    const ANCHOR_SIZE = 300; // Default size for the anchor (width/height)
+    const ANCHOR_X_OFFSET_PERCENT = 0.1; // 10% from left/right edge for anchor to appear
 
     // --- IMPORTANT: Replace these with your actual fish image URLs ---
     // If you're running this locally, place your fish images in the 'public' folder
@@ -55,80 +82,89 @@ const App = () => {
                 });
             }
         };
-
-        updateDimensions(); // Call once on mount
+        updateDimensions();
         window.addEventListener('resize', updateDimensions);
-        return () => window.removeEventListener('resize', updateDimensions); // Cleanup event listener
+        return () => window.removeEventListener('resize', updateDimensions);
     }, []);
 
     // Function to add a new fish to the aquarium (used for initial loading)
     const addFishInitial = useCallback((src) => {
+        if (!aquariumDimensions || aquariumDimensions.width === 0 || aquariumDimensions.height === 0) {
+            console.warn("Aquarium dimensions not ready for adding fish. Skipping initial fish load.");
+            return;
+        }
         const newFishId = Date.now() + Math.random();
         const x = Math.random() * (aquariumDimensions.width - FISH_DEFAULT_SIZE);
         const y = Math.random() * (aquariumDimensions.height - FISH_DEFAULT_SIZE);
         const dx = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
         const dy = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
-
         setFishes(prevFishes => [
             ...prevFishes,
             {
-                id: newFishId,
-                src: src,
-                x: Math.max(0, Math.min(x, aquariumDimensions.width - FISH_DEFAULT_SIZE)),
-                y: Math.max(0, Math.min(y, aquariumDimensions.height - FISH_DEFAULT_SIZE)),
-                dx: dx === 0 ? FISH_BASE_SPEED : dx, // Ensure non-zero horizontal speed
-                dy: dy === 0 ? FISH_BASE_SPEED : dy, // Ensure non-zero vertical speed
+                id: newFishId, src, x, y,
+                dx: dx === 0 ? FISH_BASE_SPEED : dx,
+                dy: dy === 0 ? FISH_BASE_SPEED : dy,
                 flipped: dx < 0,
-                isScaring: false,          // Jump scare state
-                originalSize: FISH_DEFAULT_SIZE, // Store initial size
-                currentSize: FISH_DEFAULT_SIZE,  // Dynamic size (for scaling during scare)
-                scareProgress: 0,          // Progress of the jump scare animation (0 to 1)
-                originalX: x,              // Store initial position for scare reset
-                originalY: y,
+                isScaring: false,
+                originalSize: FISH_DEFAULT_SIZE,
+                currentSize: FISH_DEFAULT_SIZE,
+                scareProgress: 0,
+                originalX: x, originalY: y,
             },
         ]);
     }, [aquariumDimensions]);
 
-    // Effect to automatically add fish based on fishImageSources array
+    // Effect to automatically add fish and jellyfish on mount
     useEffect(() => {
-        if (aquariumDimensions.width > 0 && aquariumDimensions.height > 0 && fishes.length === 0) {
-            fishImageSources.forEach(src => {
-                addFishInitial(src);
-            });
+        if (aquariumDimensions.width > 0 && aquariumDimensions.height > 0) {
+            if (fishes.length === 0) {
+                fishImageSources.forEach(src => {
+                    addFishInitial(src);
+                });
+            }
+            if (jellyfishes.length === 0) {
+                for (let i = 0; i < NUM_JELLYFISH; i++) {
+                    setJellyfishes(prev => [...prev, {
+                        id: Date.now() + i + 1000,
+                        x: Math.random() * (aquariumDimensions.width - JELLYFISH_SIZE),
+                        y: aquariumDimensions.height + JELLYFISH_SIZE + (Math.random() * 200),
+                        vy: 0,
+                        size: JELLYFISH_SIZE,
+                        state: 'hidden',
+                        timerStart: performance.now() + (Math.random() * JELLYFISH_HIDDEN_DURATION_MS * 2),
+                        src: '/jellygi.png',
+                    }]);
+                }
+            }
         }
-    }, [aquariumDimensions, fishes.length, addFishInitial, fishImageSources]);
+    }, [aquariumDimensions, fishes.length, jellyfishes.length, addFishInitial, fishImageSources]);
+
 
     // Function to handle fish click event
     const handleFishClick = useCallback((id) => {
         setFishes(prevFishes => prevFishes.map(fish => {
             if (fish.id === id) {
-                let newIsScaring = true; // Always trigger scare on click
-                let newScareProgress = 0; // Always start animation from beginning
-                let newDx = 0; // Stop movement during scare
-                let newDy = 0;
-
-                // Capture current position as new original for this scare
-                // This ensures the fish returns to where it was *when clicked* after the scare.
-                let newOriginalX = fish.x;
-                let newOriginalY = fish.y;
-
                 return {
                     ...fish,
-                    isScaring: newIsScaring,
-                    scareProgress: newScareProgress,
-                    originalX: newOriginalX,
-                    originalY: newOriginalY,
-                    dx: newDx,
-                    dy: newDy,
+                    isScaring: true,
+                    scareProgress: 0,
+                    originalX: fish.x,
+                    originalY: fish.y,
+                    dx: 0,
+                    dy: 0,
                 };
             }
             return fish;
         }));
     }, []);
 
-    // Main animation loop logic, wrapped in useCallback for performance
-    const animateFishes = useCallback((currentTime) => {
+    // Main animation logic for fishes
+    const animateFishes = useCallback(() => {
+        if (!aquariumDimensions || aquariumDimensions.width === 0 || aquariumDimensions.height === 0) {
+            return;
+        }
         setFishes(prevFishes => {
+            if (!Array.isArray(prevFishes)) return [];
             return prevFishes.map(fish => {
                 let newX = fish.x;
                 let newY = fish.y;
@@ -141,19 +177,15 @@ const App = () => {
 
                 if (newIsScaring) {
                     newScareProgress = Math.min(1, fish.scareProgress + (1000 / JUMP_SCARE_DURATION_MS) * (1 / 60));
-
                     const scareSize = Math.min(aquariumDimensions.width, aquariumDimensions.height) * MAX_SCARE_SIZE_RATIO;
                     const normalSize = fish.originalSize;
-
                     if (newScareProgress < 0.2) {
                         newCurrentSize = normalSize + (scareSize - normalSize) * (newScareProgress / 0.2);
                     } else {
                         newCurrentSize = scareSize - (scareSize - normalSize) * ((newScareProgress - 0.2) / 0.8);
                     }
-
                     const targetX = (aquariumDimensions.width / 2) - (newCurrentSize / 2);
                     const targetY = (aquariumDimensions.height / 2) - (newCurrentSize / 2);
-
                     const moveProgressSegment = newScareProgress * 2;
                     let actualMoveProgress;
                     if (moveProgressSegment <= 1) {
@@ -161,90 +193,184 @@ const App = () => {
                     } else {
                         actualMoveProgress = 1 - (moveProgressSegment - 1);
                     }
-
                     newX = fish.originalX + (targetX - fish.originalX) * actualMoveProgress;
                     newY = fish.originalY + (targetY - fish.originalY) * actualMoveProgress;
-
 
                     if (newScareProgress >= 1) {
                         newIsScaring = false;
                         newCurrentSize = normalSize;
                         newX = fish.originalX;
                         newY = fish.originalY;
-
                         newDx = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
                         newDy = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
                     }
-
                 } else {
                     newX = fish.x + newDx;
                     newY = fish.y + newDy;
-
                     if (newX + fish.currentSize > aquariumDimensions.width || newX < 0) {
-                        newDx *= -1;
-                        newX = fish.x;
-                        newFlipped = newDx < 0;
+                        newDx *= -1; newX = fish.x; newFlipped = newDx < 0;
                     }
-
                     if (newY + fish.currentSize > aquariumDimensions.height || newY < 0) {
-                        newDy *= -1;
-                        newY = fish.y;
+                        newDy *= -1; newY = fish.y;
                     }
                 }
-
                 return {
-                    ...fish,
-                    x: newX,
-                    y: newY,
-                    dx: newDx,
-                    dy: newDy,
-                    flipped: newFlipped,
-                    currentSize: newCurrentSize,
-                    isScaring: newIsScaring,
-                    scareProgress: newScareProgress,
+                    ...fish, x: newX, y: newY, dx: newDx, dy: newDy, flipped: newFlipped,
+                    currentSize: newCurrentSize, isScaring: newIsScaring, scareProgress: newScareProgress,
                 };
             });
         });
     }, [aquariumDimensions]);
 
-    // Shark animation loop logic, wrapped in useCallback
+    // Shark animation logic
     const animateShark = useCallback(() => {
+        if (!aquariumDimensions || aquariumDimensions.width === 0 || aquariumDimensions.height === 0) {
+            return;
+        }
         setShark(prevShark => {
-            if (!prevShark.visible) return prevShark; // If not visible, no need to animate
-
+            if (!prevShark.visible) return prevShark;
             let newX = prevShark.x + (prevShark.flipped ? -prevShark.speed : prevShark.speed);
-
-            // Check if shark has passed completely off-screen
-            if (prevShark.flipped && newX < -prevShark.size) { // Moving left, off left side
+            if (prevShark.flipped && newX < -prevShark.size) {
                 return { ...prevShark, visible: false, x: -prevShark.size };
             }
-            if (!prevShark.flipped && newX > aquariumDimensions.width) { // Moving right, off right side
+            if (!prevShark.flipped && newX > aquariumDimensions.width) {
                 return { ...prevShark, visible: false, x: aquariumDimensions.width };
             }
-
             return { ...prevShark, x: newX };
         });
     }, [aquariumDimensions]);
 
+    // Jellyfish animation logic
+    const animateJellyfish = useCallback(() => {
+        if (!aquariumDimensions || aquariumDimensions.width === 0 || aquariumDimensions.height === 0 || !Array.isArray(jellyfishes)) {
+            return;
+        }
+        setJellyfishes(prevJellyfishes => {
+            if (!Array.isArray(prevJellyfishes)) return [];
+            return prevJellyfishes.map(jellyfish => {
+                let newY = jellyfish.y;
+                let newState = jellyfish.state;
+                let newTimerStart = jellyfish.timerStart;
+                const now = performance.now();
+                const middleY = aquariumDimensions.height * 0.5 - (jellyfish.size / 2); // Center jellyfish vertically
 
-    // Effect for the main animation loop (fish and shark movement)
+                switch (jellyfish.state) {
+                    case 'rising':
+                        newY += -JELLYFISH_RISE_SPEED; // Moves up
+                        if (newY <= middleY) {
+                            newY = middleY;
+                            newState = 'floating';
+                            newTimerStart = now;
+                        }
+                        break;
+                    case 'floating':
+                        if (now - newTimerStart >= JELLYFISH_FLOAT_DURATION_MS) {
+                            newState = 'falling';
+                            newTimerStart = now;
+                        }
+                        break;
+                    case 'falling':
+                        newY += JELLYFISH_FALL_SPEED; // Moves down
+                        if (newY >= aquariumDimensions.height + jellyfish.size) { // Fully off-screen
+                            newState = 'hidden';
+                            newY = aquariumDimensions.height + jellyfish.size; // Ensure off-screen
+                            newTimerStart = now;
+                        }
+                        break;
+                    case 'hidden':
+                        if (now - newTimerStart >= JELLYFISH_HIDDEN_DURATION_MS) {
+                            newState = 'rising';
+                            newY = aquariumDimensions.height + jellyfish.size; // Reset just below screen
+                            newTimerStart = now; // Reset timer for next phase
+                        }
+                        break;
+                    default:
+                        break;
+                }
+                return { ...jellyfish, y: newY, state: newState, timerStart: newTimerStart };
+            });
+        });
+    }, [aquariumDimensions, jellyfishes]);
+
+    const animateAnchor = useCallback(() => {
+        if (!aquariumDimensions || aquariumDimensions.width === 0 || aquariumDimensions.height === 0) {
+            return;
+        }
+
+        setAnchor(prevAnchor => {
+            const now = performance.now();
+            let newY = prevAnchor.y;
+            let newState = prevAnchor.state;
+            let newTimerStart = prevAnchor.timerStart;
+            let newVisible = prevAnchor.visible;
+
+            switch (prevAnchor.state) {
+                case 'hidden':
+                    // Wait for hidden duration, then start showing
+                    if (now - newTimerStart >= ANCHOR_HIDDEN_DURATION_MS) {
+                        newState = 'showing';
+                        newY = -ANCHOR_SIZE; // Start off-screen top
+                        newTimerStart = now;
+                        newVisible = true;
+                        // Set random X position when it starts showing
+                        const minX = aquariumDimensions.width * ANCHOR_X_OFFSET_PERCENT;
+                        const maxX = aquariumDimensions.width * (1 - ANCHOR_X_OFFSET_PERCENT) - ANCHOR_SIZE;
+                        // Ensure maxX is not less than minX in case of very small aquarium width
+                        const randomX = (maxX > minX) ? (minX + Math.random() * (maxX - minX)) : minX;
+                        setAnchor(current => ({ ...current, x: randomX }));
+                    }
+                    break;
+                case 'showing':
+                    newY += ANCHOR_DROP_SPEED; // Drop down
+                    const targetY = aquariumDimensions.height * 0; // Drops to 60% from top (changed from 0.3)
+                    if (newY >= targetY) {
+                        newY = targetY; // Stop at target Y
+                        if (now - newTimerStart >= ANCHOR_DISPLAY_DURATION_MS) {
+                            newState = 'ascending'; // After display duration, start ascending
+                            newTimerStart = now; // Reset timer for ascending phase
+                        }
+                    }
+                    break;
+                case 'ascending':
+                    newY -= ANCHOR_DROP_SPEED; // Ascend (move up)
+                    const topY = -ANCHOR_SIZE; // Ascend back to off-screen top
+                    if (newY <= topY) {
+                        newY = topY; // Stop at off-screen top
+                        newState = 'hidden'; // After reaching top, go back to hidden state
+                        newVisible = false; // Hide it after reaching the top
+                        newTimerStart = now; // Reset timer for next hidden phase
+                    }
+                    break;
+                default:
+                    break;
+            }
+            return { ...prevAnchor, y: newY, state: newState, visible: newVisible, timerStart: newTimerStart };
+        });
+    }, [aquariumDimensions]); // Only aquariumDimensions as dependency needed for this specific logic
+
+    // Effect for the main animation loop (fish, shark, jellyfish, and anchor movement)
     useEffect(() => {
         if (aquariumDimensions.width === 0 || aquariumDimensions.height === 0) {
             return;
         }
 
         let animationFrameId;
+        // The initial state set for anchor should be outside the animate function
+        // It's already in the correct place, running once on mount.
 
-        const animate = (timestamp) => {
-            animateFishes(timestamp);
-            animateShark(); // Animate shark on each frame
+        const animate = () => {
+            animateFishes();
+            animateShark();
+            animateJellyfish();
+            animateAnchor(); // Animate anchor
             animationFrameId = requestAnimationFrame(animate);
         };
 
         animationFrameId = requestAnimationFrame(animate);
 
         return () => cancelAnimationFrame(animationFrameId);
-    }, [aquariumDimensions, animateFishes, animateShark]); // Depend on both animation functions
+    }, [aquariumDimensions, animateFishes, animateShark, animateJellyfish, animateAnchor]);
+
 
     // Effect to trigger shark appearance periodically
     useEffect(() => {
@@ -254,27 +380,24 @@ const App = () => {
 
         const sharkTimer = setInterval(() => {
             setShark(prevShark => {
-                if (prevShark.visible) return prevShark; // Don't spawn if already visible
-
-                const startFromRight = Math.random() > 0.5; // Randomly start from left or right
+                if (prevShark.visible) return prevShark;
+                const startFromRight = Math.random() > 0.5;
                 const startX = startFromRight ? aquariumDimensions.width : -shark.size;
                 const startY = Math.random() * (aquariumDimensions.height - shark.size);
-
                 return {
                     ...prevShark,
                     x: startX,
                     y: startY,
                     visible: true,
-                    flipped: startFromRight, // Flip if starting from right (moving left)
+                    flipped: startFromRight,
                 };
             });
         }, SHARK_PASS_INTERVAL_MS);
-
         return () => clearInterval(sharkTimer);
-    }, [aquariumDimensions, shark.size]); // Depend on shark.size to reset if its value changes
+    }, [aquariumDimensions, shark.size]);
 
     return (
-        <div className="relative flex flex-col h-screen w-screen font-inter overflow-hidden">
+        <div className="relative flex flex-col h-screen w-screen font-inter overflow-hidden bg-gray-100">
             {/* Title Section */}
             <div className="flex flex-col items-center justify-center p-4 bg-gray-900 text-white rounded-b-2xl shadow-lg z-20">
                 <h1 className="text-5xl font-bold text-teal-400 drop-shadow-lg">AslabArium</h1>
@@ -284,9 +407,9 @@ const App = () => {
             {/* Aquarium Container */}
             <div
                 ref={aquariumRef}
-                className="relative flex-grow bg-gradient-to-br from-blue-300 via-blue-500 to-blue-700
+                className="relative flex-grow bg-blue-200 bg-gradient-to-br from-blue-300 via-blue-500 to-blue-700
                            rounded-2xl m-4 shadow-2xl overflow-hidden
-                           flex items-center justify-center" // Center content if empty
+                           flex items-center justify-center min-h-[calc(100vh-150px)]"
             >
                 {/* Water effects: subtle light rays */}
                 <div className="absolute inset-0 z-0 opacity-20"
@@ -299,15 +422,14 @@ const App = () => {
 
                 {/* Bubbles Container - Static bubbles, significantly slower and subtle */}
                 <div className="absolute inset-0 z-10 pointer-events-none">
-                    {Array.from({ length: 20 }).map((_, i) => ( // Create 20 bubbles
+                    {Array.from({ length: 20 }).map((_, i) => (
                         <div
                             key={i}
                             className="bubble absolute bg-white rounded-full opacity-0"
                             style={{
-                                width: `${Math.random() * 8 + 4}px`, // Smaller bubbles: 4px to 12px
+                                width: `${Math.random() * 8 + 4}px`,
                                 height: `${Math.random() * 8 + 4}px`,
-                                left: `${Math.random() * 100}%`, // Random horizontal position
-                                // Significantly increased duration for very slow bubbles, and varied delay
+                                left: `${Math.random() * 100}%`,
                                 animation: `bubble-rise ${Math.random() * 60 + 40}s infinite ease-out ${Math.random() * 30}s`,
                             }}
                         ></div>
@@ -324,11 +446,54 @@ const App = () => {
                             left: `${shark.x}px`,
                             top: `${shark.y}px`,
                             width: `${shark.size}px`,
-                            height: 'auto', // Maintain aspect ratio
-                            zIndex: 5, // Changed to 5 to be behind regular fish (zIndex 10)
+                            height: 'auto',
+                            zIndex: 5,
                             objectFit: 'contain',
+                            opacity: 0.6,
                         }}
-                        onError={(e) => { e.target.style.display = 'none'; }} // Hide if sharkto.png not found
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                )}
+
+                {/* Render jellyfish */}
+                {jellyfishes.map(jellyfish => (
+                    jellyfish.state !== 'hidden' && (
+                        <img
+                            key={jellyfish.id}
+                            src={jellyfish.src}
+                            alt="jellyfish"
+                            className="absolute"
+                            style={{
+                                left: `${jellyfish.x}px`,
+                                top: `${jellyfish.y}px`,
+                                width: `${jellyfish.size}px`,
+                                height: `${jellyfish.size}px`,
+                                opacity: jellyfish.state === 'hidden' ? 0 : 0.2,
+                                zIndex: 4,
+                                objectFit: 'contain',
+                                transition: 'opacity 0.5s ease-out, transform 0.5s ease-out',
+                            }}
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                    )
+                ))}
+
+                {/* Render the anchor */}
+                {anchor.visible && (
+                    <img
+                        src="/jangriq.png" /* Assuming anchor image is named anchor.png in public folder */
+                        alt="anchor"
+                        className="absolute"
+                        style={{
+                            left: `${anchor.x}px`,
+                            top: `${anchor.y}px`,
+                            width: `${ANCHOR_SIZE}px`,     /* EDIT SIZE HERE */
+                            height: 'auto',                /* EDIT SIZE HERE - use 'auto' to maintain aspect ratio */
+                            zIndex: 8,                     // Between jellyfish and fish, for visual layering
+                            objectFit: 'contain',
+                            // Removed transform transition as it conflicts with direct Y position updates
+                        }}
+                        onError={(e) => { e.target.style.display = 'none'; }}
                     />
                 )}
 
@@ -344,20 +509,21 @@ const App = () => {
                             top: `${fish.y}px`,
                             width: `${fish.currentSize}px`,
                             height: `${fish.currentSize}px`,
-                            zIndex: fish.isScaring ? 20 : 10, // Bring to front during scare
-                            objectFit: 'contain', // Ensures the entire image is visible within its bounds
-                            cursor: 'pointer', // Indicates it's clickable
-                            transition: fish.isScaring ? 'all 0.1s linear' : 'none', // Fast transition during scare, none otherwise
+                            zIndex: fish.isScaring ? 20 : 10,
+                            objectFit: 'contain',
+                            cursor: 'pointer',
+                            transition: fish.isScaring ? 'all 0.1s linear' : 'none',
                         }}
-                        onClick={() => handleFishClick(fish.id)} // Add click handler
-                        // Fallback for broken image links: hide the image
+                        onClick={() => handleFishClick(fish.id)}
                         onError={(e) => { e.target.style.display = 'none'; }}
                     />
                 ))}
 
                 {/* Message if no fish are loaded */}
-                {fishes.length === 0 && aquariumDimensions.width > 0 && (
-                    <p className="text-white text-3xl font-bold z-20">No fish to display. Add images to `fishImageSources` array.</p>
+                {aquariumDimensions.width > 0 && fishes.length === 0 && (
+                    <p className="text-white text-3xl font-bold z-20 text-center">
+                        No fish to display.<br/>Please ensure your fish PNG files are in the public folder.
+                    </p>
                 )}
             </div>
 
