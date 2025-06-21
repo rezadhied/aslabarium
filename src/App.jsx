@@ -31,6 +31,9 @@ const App = () => {
         timerStart: 0,
     });
 
+    // NEW STATE: To keep track of the number of visible fish
+    const [fishCount, setFishCount] = useState(0);
+
     // Constants for fish behavior
     const FISH_BASE_SPEED = 2; // Pixels per frame for normal movement
     const FISH_DEFAULT_SIZE = 200; // Default size for fish image (width and height)
@@ -63,12 +66,6 @@ const App = () => {
     const fishImageSources = [
         '/fish_1.png',
         '/fish_2.png',
-        '/fish_3.png',
-        '/fish_4.png',
-        '/fish_5.png',
-        '/fish_6.png',
-        '/fish_7.png',
-        '/fish_8.png',
     ];
     // --- End of important section ---
 
@@ -139,6 +136,10 @@ const App = () => {
         }
     }, [aquariumDimensions, fishes.length, jellyfishes.length, addFishInitial, fishImageSources]);
 
+    // NEW EFFECT: Update fishCount whenever 'fishes' state changes
+    useEffect(() => {
+        setFishCount(fishes.length);
+    }, [fishes]);
 
     // Function to handle fish click event
     const handleFishClick = useCallback((id) => {
@@ -402,6 +403,11 @@ const App = () => {
             <div className="flex flex-col items-center justify-center p-4 bg-gray-900 text-white rounded-b-2xl shadow-lg z-20">
                 <h1 className="text-5xl font-bold text-teal-400 drop-shadow-lg">AslabArium</h1>
                 <p className="text-xl font-bold text-gray-300 mt-1">25/26</p>
+            </div>
+
+            {/* Fish Count Display */}
+            <div className="absolute top-4 right-4 z-30 bg-gray-800 text-white px-3 py-1 rounded-lg text-lg font-semibold shadow-md">
+                ASLAB COUNT: {fishCount}
             </div>
 
             {/* Aquarium Container */}
