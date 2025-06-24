@@ -24,7 +24,7 @@ const App = () => {
 
     // State for the anchor
     const [anchor, setAnchor] = useState({
-        y: -200, // Start off-screen above the top (initial value, will be set more precisely)
+        y: -300, // Start off-screen above the top (initial value, will be set more precisely)
         x: 0, // Will be set to a random position when it shows
         visible: false,
         state: 'hidden', // 'hidden', 'showing'
@@ -56,16 +56,14 @@ const App = () => {
     // Anchor specific constants
     const ANCHOR_DISPLAY_DURATION_MS = 10000; // Anchor visible for 5 seconds
     const ANCHOR_HIDDEN_DURATION_MS = 10000; // Anchor hidden for 5 seconds
-    const ANCHOR_DROP_SPEED = 2; // How fast the anchor moves vertically
+    const ANCHOR_DROP_SPEED = 1; // How fast the anchor moves vertically
     const ANCHOR_SIZE = 300; // Default size for the anchor (width/height)
     const ANCHOR_X_OFFSET_PERCENT = 0.1; // 10% from left/right edge for anchor to appear
 
     // --- IMPORTANT: Replace these with your actual fish image URLs ---
-    // If you're running this locally, place your fish images in the 'public' folder
-    // and reference them like '/your-fish-image.png'
+    // Now includes a 'name' property for each fish
     const fishImageSources = [
-        '/fish_1.png',
-        '/fish_2.png',
+        { src: '/fish_1.png', name: 'Nemitarus nematophirmanio' },
     ];
     // --- End of important section ---
 
@@ -85,7 +83,8 @@ const App = () => {
     }, []);
 
     // Function to add a new fish to the aquarium (used for initial loading)
-    const addFishInitial = useCallback((src) => {
+    // Modified to accept a fishData object (including src and name)
+    const addFishInitial = useCallback((fishData) => {
         if (!aquariumDimensions || aquariumDimensions.width === 0 || aquariumDimensions.height === 0) {
             console.warn("Aquarium dimensions not ready for adding fish. Skipping initial fish load.");
             return;
@@ -98,7 +97,10 @@ const App = () => {
         setFishes(prevFishes => [
             ...prevFishes,
             {
-                id: newFishId, src, x, y,
+                id: newFishId,
+                src: fishData.src, // Use src from fishData
+                name: fishData.name, // Add the name property
+                x, y,
                 dx: dx === 0 ? FISH_BASE_SPEED : dx,
                 dy: dy === 0 ? FISH_BASE_SPEED : dy,
                 flipped: dx < 0,
@@ -115,8 +117,9 @@ const App = () => {
     useEffect(() => {
         if (aquariumDimensions.width > 0 && aquariumDimensions.height > 0) {
             if (fishes.length === 0) {
-                fishImageSources.forEach(src => {
-                    addFishInitial(src);
+                // Iterate over the fishImageSources objects
+                fishImageSources.forEach(fishData => {
+                    addFishInitial(fishData); // Pass the whole fishData object
                 });
             }
             if (jellyfishes.length === 0) {
@@ -185,8 +188,11 @@ const App = () => {
                     } else {
                         newCurrentSize = scareSize - (scareSize - normalSize) * ((newScareProgress - 0.2) / 0.8);
                     }
+                    // Adjusted targetX and targetY to center the entire fish + name div
+                    const totalHeight = newCurrentSize + 20; // Fish size + name div height
                     const targetX = (aquariumDimensions.width / 2) - (newCurrentSize / 2);
-                    const targetY = (aquariumDimensions.height / 2) - (newCurrentSize / 2);
+                    const targetY = (aquariumDimensions.height / 2) - (totalHeight / 2); // Center based on total height
+
                     const moveProgressSegment = newScareProgress * 2;
                     let actualMoveProgress;
                     if (moveProgressSegment <= 1) {
@@ -208,10 +214,12 @@ const App = () => {
                 } else {
                     newX = fish.x + newDx;
                     newY = fish.y + newDy;
+                    // When checking boundaries, consider the total height of fish + name
+                    const fishTotalRenderHeight = fish.currentSize + 20; // approx height for name div
                     if (newX + fish.currentSize > aquariumDimensions.width || newX < 0) {
                         newDx *= -1; newX = fish.x; newFlipped = newDx < 0;
                     }
-                    if (newY + fish.currentSize > aquariumDimensions.height || newY < 0) {
+                    if (newY + fishTotalRenderHeight > aquariumDimensions.height || newY < 0) {
                         newDy *= -1; newY = fish.y;
                     }
                 }
@@ -505,24 +513,40 @@ const App = () => {
 
                 {/* Render each fish */}
                 {fishes.map(fish => (
-                    <img
-                        key={fish.id}
-                        src={fish.src}
-                        alt="fish"
-                        className={`absolute ${fish.flipped ? '-scale-x-100' : ''}`}
+                    <div
+                        key={fish.id} // Key is now on the outer div
+                        className="absolute"
                         style={{
                             left: `${fish.x}px`,
                             top: `${fish.y}px`,
                             width: `${fish.currentSize}px`,
                             height: `${fish.currentSize}px`,
                             zIndex: fish.isScaring ? 20 : 10,
-                            objectFit: 'contain',
                             cursor: 'pointer',
                             transition: fish.isScaring ? 'all 0.1s linear' : 'none',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'flex-start',
                         }}
                         onClick={() => handleFishClick(fish.id)}
-                        onError={(e) => { e.target.style.display = 'none'; }}
-                    />
+                    >
+                        <img
+                            src={fish.src}
+                            alt={fish.name}
+                            className={`w-full h-full object-contain ${fish.flipped ? '-scale-x-100' : ''}`}
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                        {/* Fish Name Display */}
+                        <div
+                            className="text-white text-sm font-bold bg-black bg-opacity-50 px-1 rounded-sm mt-1 whitespace-nowrap"
+                            style={{
+                                pointerEvents: 'none', // Allows clicks to pass through to the fish div
+                            }}
+                        >
+                            {fish.name}
+                        </div>
+                    </div>
                 ))}
 
                 {/* Message if no fish are loaded */}
