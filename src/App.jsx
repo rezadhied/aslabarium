@@ -65,6 +65,7 @@ const App = () => {
     const fishImageSources = [
         { src: '/fish_1.png', name: 'Nemitarus Nematophirmanio' },
         { src: '/fish_2.png', name: 'Anguila Anggaldora' },
+        { src: '/fish_3.png', name: 'Widitakus Javanicus' },
     ];
     // --- End of important section ---
 
