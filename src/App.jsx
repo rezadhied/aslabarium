@@ -66,6 +66,7 @@ const App = () => {
         { src: '/fish_1.png', name: 'Nemitarus Nematophirmanio' },
         { src: '/fish_2.png', name: 'Anguila Anggaldora' },
         { src: '/fish_3.png', name: 'Widitakus Javanicus' },
+        { src: '/evanbob.png', name: 'Spongivan Yudistirus' }, // This is Evan Bob
     ];
     // --- End of important section ---
 
@@ -92,10 +93,20 @@ const App = () => {
             return;
         }
         const newFishId = Date.now() + Math.random();
-        const x = Math.random() * (aquariumDimensions.width - FISH_DEFAULT_SIZE);
-        const y = Math.random() * (aquariumDimensions.height - FISH_DEFAULT_SIZE);
-        const dx = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
-        const dy = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
+        let x = Math.random() * (aquariumDimensions.width - FISH_DEFAULT_SIZE);
+        let y = Math.random() * (aquariumDimensions.height - FISH_DEFAULT_SIZE);
+        let dx = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
+        let dy = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
+
+        // Special initial placement for Evan Bob
+        if (fishData.name === 'Spongivan Yudistirus') {
+            const bottomMargin = 50; // Distance from the bottom for Evan Bob
+            x = Math.random() * (aquariumDimensions.width - FISH_DEFAULT_SIZE);
+            y = aquariumDimensions.height - FISH_DEFAULT_SIZE - bottomMargin; // Position at the bottom
+            dx = (Math.random() > 0.5 ? FISH_BASE_SPEED : -FISH_BASE_SPEED); // Start moving left or right
+            dy = 0; // No vertical movement
+        }
+
         setFishes(prevFishes => [
             ...prevFishes,
             {
@@ -104,7 +115,7 @@ const App = () => {
                 name: fishData.name, // Add the name property
                 x, y,
                 dx: dx === 0 ? FISH_BASE_SPEED : dx,
-                dy: dy === 0 ? FISH_BASE_SPEED : dy,
+                dy: dy === 0 ? FISH_BASE_SPEED : dy, // Ensure non-zero for other fish, but will be overridden for Evan Bob
                 flipped: dx < 0,
                 isScaring: false,
                 originalSize: FISH_DEFAULT_SIZE,
@@ -191,38 +202,55 @@ const App = () => {
                         newCurrentSize = scareSize - (scareSize - normalSize) * ((newScareProgress - 0.2) / 0.8);
                     }
                     // Adjusted targetX and targetY to center the entire fish + name div
-                    const totalHeight = newCurrentSize + 20; // Fish size + name div height
+                    const totalHeight = newCurrentSize + 20; // Fish size + name div height (approx)
                     const targetX = (aquariumDimensions.width / 2) - (newCurrentSize / 2);
                     const targetY = (aquariumDimensions.height / 2) - (totalHeight / 2); // Center based on total height
 
-                    const moveProgressSegment = newScareProgress * 2;
-                    let actualMoveProgress;
-                    if (moveProgressSegment <= 1) {
-                        actualMoveProgress = moveProgressSegment;
-                    } else {
-                        actualMoveProgress = 1 - (moveProgressSegment - 1);
-                    }
-                    newX = fish.originalX + (targetX - fish.originalX) * actualMoveProgress;
-                    newY = fish.originalY + (targetY - fish.originalY) * actualMoveProgress;
+                    newX = fish.originalX + (targetX - fish.originalX) * newScareProgress; // Simplified movement during scare
+                    newY = fish.originalY + (targetY - fish.originalY) * newScareProgress;
 
                     if (newScareProgress >= 1) {
                         newIsScaring = false;
                         newCurrentSize = normalSize;
                         newX = fish.originalX;
                         newY = fish.originalY;
-                        newDx = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
-                        newDy = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
+                        // Re-randomize dx/dy for other fish, but special handling for Evan Bob
+                        if (fish.name === 'Spongivan Yudistirus') {
+                            newDx = (Math.random() > 0.5 ? FISH_BASE_SPEED : -FISH_BASE_SPEED); // Only horizontal movement
+                            newDy = 0; // No vertical movement
+                        } else {
+                            newDx = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
+                            newDy = (Math.random() - 0.5) * FISH_BASE_SPEED * 2;
+                        }
                     }
                 } else {
+                    // Normal movement logic
                     newX = fish.x + newDx;
                     newY = fish.y + newDy;
-                    // When checking boundaries, consider the total height of fish + name
-                    const fishTotalRenderHeight = fish.currentSize + 20; // approx height for name div
-                    if (newX + fish.currentSize > aquariumDimensions.width || newX < 0) {
-                        newDx *= -1; newX = fish.x; newFlipped = newDx < 0;
-                    }
-                    if (newY + fishTotalRenderHeight > aquariumDimensions.height || newY < 0) {
-                        newDy *= -1; newY = fish.y;
+                    const fishTotalRenderHeight = fish.currentSize + 20; // approximate height for name div
+
+                    if (fish.name === 'Spongivan Yudistirus') {
+                        // Evan Bob specific movement: always at the bottom, moves left/right
+                        newDy = 0; // Ensure no vertical movement
+                        const bottomMargin = 50; // Keep 50px from the very bottom
+                        newY = aquariumDimensions.height - fishTotalRenderHeight - bottomMargin;
+
+                        if (newX + fish.currentSize > aquariumDimensions.width || newX < 0) {
+                            newDx *= -1; // Reverse horizontal direction
+                            newX = fish.x; // Revert X to prevent sticking
+                            newFlipped = newDx < 0;
+                        }
+                    } else {
+                        // General fish movement logic
+                        if (newX + fish.currentSize > aquariumDimensions.width || newX < 0) {
+                            newDx *= -1;
+                            newX = fish.x; // Revert X to prevent sticking
+                            newFlipped = newDx < 0;
+                        }
+                        if (newY + fishTotalRenderHeight > aquariumDimensions.height || newY < 0) {
+                            newDy *= -1;
+                            newY = fish.y; // Revert Y to prevent sticking
+                        }
                     }
                 }
                 return {
