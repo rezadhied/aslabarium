@@ -68,6 +68,7 @@ const App = () => {
         { src: '/fish_3.png', name: 'Widitakus Javanicus' },
         { src: '/evanbob.png', name: 'Spongivan Yudistirus' }, // This is Evan Bob
         { src: '/randugong.png', name: 'Dugonian Irdurian' },
+        { src: '/koirev.png', name: 'Cokrinus Rubrofuscus' },
     ];
     // --- End of important section ---
 
